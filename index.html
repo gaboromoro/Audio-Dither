@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="sk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Dithering</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script defer src="script.js"></script>
+</head>
+
+<body>
+    <div class="page">
+        <h1 class="nadpis">Audio Dithering</h1>
+
+        <section class="settings-panel">
+            <div class="settings-grid">
+                <div class="control-row">
+                    <label for="SliderAmp">Amplitúda:</label>
+                    <input type="range" id="SliderAmp" min="0" max="150" step="1" value="150">
+                </div>
+
+                <div class="control-row">
+                    <label for="SliderDither">Úroveň ditheringu:</label>
+                    <input type="range" id="SliderDither" min="0" max="1" step="0.01" value="0">
+                </div>
+
+                <div class="control-row">
+                    <label for="SliderBitDepth">
+                        Bitová hĺbka:
+                        <span id="bitsValue">8</span> bitov
+                    </label>
+                    <input type="range" id="SliderBitDepth" min="1" max="8" step="1" value="3">
+                </div>
+
+                <div class="control-row">
+                    <label for="DitherType">Typ ditheringu:</label>
+                    <select id="DitherType">
+                        <option value="tpdf">TPDF</option>
+                        <option value="rpdf">RPDF</option>
+                        <option value="gaussian">Gaussovský</option>
+                    </select>
+                </div>
+
+                <div class="control-row">
+                    <label for="SignalType">Typ signálu:</label>
+                    <select id="SignalType">
+                        <option value="sinus">Sinus</option>
+                        <option value="triangle">Trojuholník</option>
+                        <option value="square">Obdĺžnik</option>
+                        <option value="sawtooth">Píla</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <section class="graphs">
+            <div class="graph-titles">
+                <h3 class="card-title">Pôvodný signál</h3>
+                <h3 class="card-title">Kvantizovaný signál</h3>
+                <h3 class="card-title">Kvantizačná chyba</h3>
+            </div>
+            <div class="canvas-box" id="canvas-container"></div>
+        </section>
+
+        <section class="prehravanie">
+            <div class="playback-card">
+                <h3 class="card-text-2">Pôvodný signál</h3>
+                <div class="button-row">
+                    <button id="playOriginal" class="audio-btn play-btn">Play</button>
+                    <button id="stopOriginal" class="audio-btn stop-btn">Stop</button>
+                </div>
+            </div>
+
+            <div class="playback-card playback-card-wide">
+                <h3 class="card-text-2">Kvantizovaný signál:</h3>
+
+                <div class="playback-mode">
+                    <span>Bez ditheringu</span>
+                    <div class="button-row">
+                        <button id="playQuantized" class="audio-btn play-btn">Play</button>
+                        <button id="stopQuantized" class="audio-btn stop-btn">Stop</button>
+                    </div>
+                </div>
+
+                <div class="playback-mode">
+                    <span>S ditheringom</span>
+                    <div class="button-row">
+                        <button id="playDithered" class="audio-btn play-btn">Play</button>
+                        <button id="stopDithered" class="audio-btn stop-btn">Stop</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+</body>
+
+</html>
