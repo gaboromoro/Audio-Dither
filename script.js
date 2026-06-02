@@ -25,7 +25,7 @@ const stopDithered = document.getElementById("stopDithered");
 
 const FS = 44100;
 const FREQ = 440;
-const DURATION = 5;
+const DURATION = 20;
 
 // jedna perioda ma fs/f priblizne 100 vzoriek, kreslime teda jednu periodu signalu
 const DRAW_SAMPLES = 101;
@@ -62,12 +62,13 @@ let ss = new Float32Array(0);           // signal + dither
 let qS = new Float32Array(0);           // kvantizovany signal s ditherom
 let qSBezDither = new Float32Array(0);  // kvantizovany signal bez ditheru
 let qErrorS = new Float32Array(0);      // kvantizacna chyba
+let noiseBase = new Float32Array(0);    // ulozeny sum -- generuje sa len pri zmene typu ditheru
 
 let audioCtx = null;
 let currentSource = null;
 
 // ==========================
-// Šumy
+// Sumy
 // ==========================
 
 function TPDF() {
@@ -156,7 +157,7 @@ function getSchod(nBits) {
     return 2 / levels;   // rozsah <-1, 1> deleny poctom urovni
 }
 
-function quantizator(signal, nBits) {
+function quantizer(signal, nBits) {
     const schod = getSchod(nBits);
     const qSignal = new Float32Array(signal.length);
     const qErrorSignal = new Float32Array(signal.length);
@@ -181,11 +182,33 @@ function quantizator(signal, nBits) {
 // Dither
 // ==========================
 
-function addDither(signal, noiseFunction, schod, amount = 1) {
+// vrati sumovu funkciu podla aktualne vybraneho typu
+function getNoiseFunction() {
+    const ditherType = DitherType.value;
+    if (ditherType === "tpdf") return TPDF;
+    if (ditherType === "rpdf") return RPDF;
+    if (ditherType === "gaussian") return Gaussian;
+}
+
+// vygeneruje novu realizaciu sumu -- vola sa LEN pri zmene typu ditheru,
+// nie pri posuvani posuvnikov (uroven, amplituda, bitova hlbka)
+function regenerateNoise() {
+    const noiseFunction = getNoiseFunction();
+    const N = Math.round(DURATION * FS);
+    noiseBase = new Float32Array(N);
+
+    for (let n = 0; n < N; n++) {
+        noiseBase[n] = noiseFunction();
+    }
+}
+
+// prida ulozeny sum k signalu -- meni sa len jeho uroven (amount * schod),
+// nahodny priebeh zostava rovnaky
+function addDither(signal, schod, amount = 1) {
     const out = new Float32Array(signal.length);
 
     for (let n = 0; n < signal.length; n++) {
-        out[n] = signal[n] + amount * schod * noiseFunction();
+        out[n] = signal[n] + amount * schod * noiseBase[n];
     }
 
     return out;
@@ -203,7 +226,6 @@ function updateSignals() {
     bitsValue.textContent = nBits;
 
     const signalType = SignalType.value;
-    const ditherType = DitherType.value;
 
     // vyber generatora signalu
     if (signalType === "sinus") {
@@ -216,26 +238,17 @@ function updateSignals() {
         s = sawtoothGen({ A: amp, f: FREQ, fs: FS, duration: DURATION });
     }
 
-    // vyber Dither
-    let noiseFunction;
-    if (ditherType === "tpdf") {
-        noiseFunction = TPDF;
-    } else if (ditherType === "rpdf") {
-        noiseFunction = RPDF;
-    } else if (ditherType === "gaussian") {
-        noiseFunction = Gaussian;
-    }
-
     // signal s ditherom -- sum sa pridava pred kvantizaciou
-    ss = addDither(s, noiseFunction, schod, ditherAmount);
+    // (pouzije sa ulozeny sum, novy sa generuje len pri zmene typu ditheru)
+    ss = addDither(s, schod, ditherAmount);
 
     // kvantizacia signalu s ditherom (chybu berieme z tohto priebehu)
-    const dithered = quantizator(ss, nBits);
+    const dithered = quantizer(ss, nBits);
     qS = dithered.qSignal;
     qErrorS = dithered.qErrorSignal;
 
     // referencna kvantizacia bez ditheru (len na prehravanie)
-    qSBezDither = quantizator(s, nBits).qSignal;
+    qSBezDither = quantizer(s, nBits).qSignal;
 
     redraw();
 }
@@ -295,6 +308,7 @@ function setup() {
     const cnv = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
     cnv.parent("canvas-container");
     noLoop();          // prekresluje sa len pri zmene parametrov
+    regenerateNoise();
     updateSignals();
 }
 
@@ -381,7 +395,10 @@ SliderAmp.addEventListener("input", updateSignals);
 SliderBitDepth.addEventListener("input", updateSignals);
 SliderDither.addEventListener("input", updateSignals);
 SignalType.addEventListener("change", updateSignals);
-DitherType.addEventListener("change", updateSignals);
+DitherType.addEventListener("change", () => {
+    regenerateNoise();   // novy typ ditheru -> nova realizacia sumu
+    updateSignals();
+});
 
 function keyPressed() {
     if (key === 's') {
