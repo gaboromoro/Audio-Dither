@@ -65,7 +65,6 @@ let qErrorS = new Float32Array(0);      // kvantizacna chyba
 let noiseBase = new Float32Array(0);    // ulozeny sum -- generuje sa len pri zmene typu ditheru
 
 let audioCtx = null;
-let currentSource = null;
 
 // ==========================
 // Sumy
@@ -251,54 +250,80 @@ function updateSignals() {
     qSBezDither = quantizer(s, nBits).qSignal;
 
     redraw();
+    posliParametre();   // ak prave hrame, posli nove hodnoty do procesora (live update)
 }
 
 // ==========================
-// Prehravanie (Web Audio API)
+// Prehravanie v realnom case (AudioWorklet)
 // ==========================
+// Namiesto predpocitaneho bufferu generuje zvuk procesor na audio vlakne.
+// Vzorky vznikaju az v callbacku z aktualnych hodnot sliderov -> zmenu pocut okamzite.
 
-function playSignal(signalArray) {
+let workletNode = null;    // uzol s nasim procesorom (dither-processor.js)
+let workletReady = null;   // Promise z addModule, aby sa modul nacital len raz
+
+// Posle aktualne hodnoty z UI do procesora (parametre + diskretne volby).
+function posliParametre() {
+    if (!workletNode) return;   // este nehrame -> niet kam posielat
+
+    const amp = Number(SliderAmp.value) / 150;
+    const nBits = Number(SliderBitDepth.value);
+    const ditherAmount = Number(SliderDither.value);
+    const t = audioCtx.currentTime;
+
+    // amplitudu menime plynulo (bez lupnutia), ostatne staci skokovo
+    workletNode.parameters.get("amplitude").setTargetAtTime(amp, t, 0.01);
+    workletNode.parameters.get("frequency").value = FREQ;
+    workletNode.parameters.get("bits").value = nBits;
+    workletNode.parameters.get("ditherAmount").value = ditherAmount;
+
+    // diskretne volby idu spravou (nie su to plynule cisla)
+    workletNode.port.postMessage({
+        signalType: SignalType.value,
+        ditherType: DitherType.value
+    });
+}
+
+// Vytvori AudioContext, nacita procesor a uzol (len raz). Musi byt z gesta pouzivatela.
+async function pripravAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
-
-    if (currentSource) {
-        currentSource.stop();
-        currentSource = null;
+    if (audioCtx.state === "suspended") {
+        await audioCtx.resume();   // autoplay policy: kontext sa rozbehne az po kliku
     }
-
-    const buffer = audioCtx.createBuffer(1, signalArray.length, FS);
-    buffer.getChannelData(0).set(signalArray);
-
-    const source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioCtx.destination);
-    source.start();
-
-    currentSource = source;
-
-    source.onended = () => {
-        if (currentSource === source) {
-            currentSource = null;
+    if (!workletNode) {
+        if (!workletReady) {
+            workletReady = audioCtx.audioWorklet.addModule("dither-processor.js");
         }
-    };
-}
-
-function stopSignal() {
-    if (currentSource) {
-        currentSource.stop();
-        currentSource = null;
+        await workletReady;        // pockame na nacitanie modulu (je to asynchronne)
+        workletNode = new AudioWorkletNode(audioCtx, "dither-processor");
+        workletNode.connect(audioCtx.destination);
+        posliParametre();
     }
 }
 
-playOriginal.addEventListener("click", () => playSignal(s));
-stopOriginal.addEventListener("click", stopSignal);
+// Spusti prehravanie v danom mode: "original" | "quantized" | "dithered"
+async function prehraj(mode) {
+    await pripravAudio();
+    posliParametre();
+    workletNode.port.postMessage({ mode: mode, running: true });
+}
 
-playQuantized.addEventListener("click", () => playSignal(qSBezDither));
-stopQuantized.addEventListener("click", stopSignal);
+function zastav() {
+    if (workletNode) {
+        workletNode.port.postMessage({ running: false });
+    }
+}
 
-playDithered.addEventListener("click", () => playSignal(qS));   // kvantizovany signal s ditherom
-stopDithered.addEventListener("click", stopSignal);
+playOriginal.addEventListener("click", () => prehraj("original"));
+stopOriginal.addEventListener("click", zastav);
+
+playQuantized.addEventListener("click", () => prehraj("quantized"));   // bez ditheru
+stopQuantized.addEventListener("click", zastav);
+
+playDithered.addEventListener("click", () => prehraj("dithered"));     // s ditherom
+stopDithered.addEventListener("click", zastav);
 
 // ==========================
 // Vykreslovanie
